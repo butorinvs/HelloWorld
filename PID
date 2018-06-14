@@ -1,0 +1,90 @@
+/***********************************************************************
+Реализация ПИД алгоритма
+/************************************************************************/
+
+//#include "stdint.h"
+#include "pid.h"
+#include "General.h"	// Общий файл, включаемый в каждый модуль. В него нужно помещать часто используемые описания.
+#include "Function.h"	// Различные функции
+#include "PWM.h"	// Различные функции
+#include "ADC_PIC.h"	// Различные функции
+
+/** структора хранит данные ПИДа */
+typedef struct PID_DATA
+{
+  float lastProcessValue;	// хранит прошлую ошибку
+  float integralTerm;		// хранит прошлое значение интегральной составляющей
+  float kp;					// Пропорциональный коэффициент
+  float ki;					// Интегральный коэффициент
+  float kd;					// Дифферинциальный коэффициент
+  float MAX_OUT;			// Макс знач. ШИМа
+  float MIN_OUT;			// Мин знач. ШИМа
+}
+ pidData_t;
+
+struct PID_DATA pidData;
+extern PIC_AN Channel_Temp,Channel_ABC,Channel_ABC1;
+/* ПИД инициализация. Should be called only once.
+*  @param kp - пропорциональный коэффициент.
+*  @param ki - интегральный коэффициент.
+*  @param kd - дифферинциальный коэффициент.*/
+
+void pid_Init(float kp, float ki, float kd)
+{
+  pidData.integralTerm     = INITIAL_INTEGRAL_TERM;
+  pidData.lastProcessValue = INITIAL_PROCESS_VALUE;
+  pid_setParams(kp, ki, kd);
+  pid_setOutputLimits(DEFAULT_MIN_OUT,DEFAULT_MAX_OUT);
+}
+/* Главная функция ПИД. Функцию необходимо вызывать регулярно каждые SAMPLE_TIME секунд
+ * @param setPoint - уровень уставки
+ * @param processValue - текущее значение полученное от обратной связи.
+ * @ возвращает текущее значение управляющего сигнала (ШИМа))
+ Работает по формуле
+ */
+
+//unsigned int pid_Controller(unsigned int setPoint,unsigned int processValue)
+unsigned int pid_Controller(PIC_AN*setPoint,PIC_AN*processValue)
+{
+  float error, p_term, d_term;
+  float out;
+  unsigned int out2;
+  error=(float)setPoint->Wet-(float)processValue->Wet;
+  pidData.integralTerm+=pidData.ki*error;
+  if (pidData.integralTerm > DEFAULT_MAX_OUT)  pidData.integralTerm = DEFAULT_MAX_OUT;
+  if (pidData.integralTerm < 0)  pidData.integralTerm = 0;
+  Nop();
+  // Дифферинциальная компонента
+  d_term=pidData.kd*(error-pidData.lastProcessValue);
+  pidData.lastProcessValue=error;
+  // Пропорциональное значение  
+  p_term = pidData.kp * error;
+  out=p_term+pidData.integralTerm+d_term;
+  if (out>DEFAULT_MAX_OUT) out=DEFAULT_MAX_OUT;
+  if (out<DEFAULT_MIN_OUT) out=DEFAULT_MIN_OUT;
+  out2=(unsigned int)out;
+  return	out2;
+}
+/** Ограничивание выходных значений, в нашем случае по давлению
+*  @param Min - минимальное значение.
+*  @param Min - максимальное значение. */
+void pid_setOutputLimits(float Min, float Max)
+{
+	if(Min > Max) return;
+	pidData.MIN_OUT = Min;
+	pidData.MAX_OUT = Max;
+}
+/** процедура установки коэффициентов
+ *  @param Kp - пропорциональный.
+ *  @param Ki - интегральный
+ *  @param Kd - дифферинциальный*/
+
+void pid_setParams(float Kp, float Ki, float Kd)
+{
+	if (Kp<0 || Ki<0 || Kd<0) return;
+	Nop();
+	pidData.kp = Kp;
+ 	pidData.ki = Ki*SAMPLE_TIME;
+ 	pidData.kd = Kd/SAMPLE_TIME;
+ 	Nop();
+}
